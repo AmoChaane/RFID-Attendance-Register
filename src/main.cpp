@@ -4,8 +4,7 @@
 
 const char* ssid = "VC-1012-9086";
 const char* password = "41a4843464";
-// String serverUrl = "https://e897-41-135-7-11.ngrok-free.app/api/v1/health/";
-const char* serverUrl = "https://e897-41-135-7-11.ngrok-free.app/api/v1/health/"; 
+const char* serverUrl = "https://spring-api.publicvm.com/api/v1/health/"; 
 
 // This is a forward declaration of a custom function named myFunction. 
 // Allows the compiler to recognize myFunction before its actual definition (later in the code)
@@ -23,11 +22,11 @@ void setup() {
     while (1); // Halt if connection fails
   }
 
-  makeHttpGetRequest();
 }
 
 void loop() {
-  // delay(1000);
+  // makeHttpGetRequest();
+  // delay(5000);
 }
 
 bool connectToWiFi() {
