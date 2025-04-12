@@ -5,14 +5,14 @@
 #include <MFRC522.h>
 
 // Correct pin definitions matching your wiring
-#define RST_PIN 2     // GPIO2 for reset (confirmed in your hardware)
-#define SS_PIN 5      // GPIO5 for slave select
+#define SS_PIN  5  // ESP32 pin GPIO5 
+#define RST_PIN 27 // ESP32 pin GPIO27 
 
 const char* ssid = "VC-1012-9086";
 const char* password = "41a4843464";
 const char* serverUrl = "https://spring-api.publicvm.com/api/v1/health/"; 
 
-MFRC522 mfrc522(SS_PIN, RST_PIN);
+MFRC522 rfid(SS_PIN, RST_PIN);
 MFRC522::MIFARE_Key key;
 byte nuidPICC[4];
 
@@ -24,18 +24,10 @@ void setup() {
   while (!Serial); // Wait for serial port to connect - needed for native USB
   Serial.println("Serial Monitor Started!!!");
   
-  // Initialize SPI bus
-  SPI.begin();
-  // SPI.begin(18, 19, 23, 5);  // SCK, MISO, MOSI, SS
+  SPI.begin(); // init SPI bus
+  rfid.PCD_Init(); // init MFRC522
 
-  
-  // Initialize MFRC522
-  mfrc522.PCD_Init();
-  delay(1000); // Short delay needed after init
-  
-  // Dump version information
-  Serial.println(F("Scan PICC to see UID, type, and data blocks..."));
-  // mfrc522.PCD_DumpVersionToSerial();
+  Serial.println("Tap an RFID/NFC tag on the RFID-RC522 reader");
   
   // Prepare key - all keys are set to FFFFFFFFFFFFh at chip delivery
   for (byte i = 0; i < 6; i++) {
@@ -47,47 +39,27 @@ void setup() {
   //   Serial.println("Check credentials or hardware.");
   //   while (1);
   // }
-  mfrc522.PCD_DumpVersionToSerial();
 }
 
 void loop() {
-  // Reset the loop if no new card present on the sensor/reader
-  Serial.println(mfrc522.PICC_IsNewCardPresent());
-  Serial.println(mfrc522.PICC_ReadCardSerial());
-  Serial.println("===============================");
-  if (!mfrc522.PICC_IsNewCardPresent()) {
-    return;
+  if (rfid.PICC_IsNewCardPresent()) { // new tag is available
+    if (rfid.PICC_ReadCardSerial()) { // NUID has been readed
+      MFRC522::PICC_Type piccType = rfid.PICC_GetType(rfid.uid.sak);
+      Serial.print("RFID/NFC Tag Type: ");
+      Serial.println(rfid.PICC_GetTypeName(piccType));
+
+      // print UID in Serial Monitor in the hex format
+      Serial.print("UID:");
+      for (int i = 0; i < rfid.uid.size; i++) {
+        Serial.print(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
+        Serial.print(rfid.uid.uidByte[i], HEX);
+      }
+      Serial.println();
+
+      rfid.PICC_HaltA(); // halt PICC
+      rfid.PCD_StopCrypto1(); // stop encryption on PCD
+    }
   }
-
-  // Verify if the NUID has been read
-  if (!mfrc522.PICC_ReadCardSerial()) {
-    return;
-  }
-
-  Serial.print(F("PICC type: "));
-  MFRC522::PICC_Type piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
-  Serial.println(mfrc522.PICC_GetTypeName(piccType));
-
-  // Check is the PICC of Classic MIFARE type
-  if (piccType != MFRC522::PICC_TYPE_MIFARE_MINI &&
-      piccType != MFRC522::PICC_TYPE_MIFARE_1K &&
-      piccType != MFRC522::PICC_TYPE_MIFARE_4K) {
-    Serial.println(F("Your tag is not of type MIFARE Classic."));
-    return;
-  }
-
-  // Print UID
-  Serial.print(F("UID:"));
-  for (byte i = 0; i < mfrc522.uid.size; i++) {
-    Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
-    Serial.print(mfrc522.uid.uidByte[i], HEX);
-  }
-  Serial.println();
-
-  // Halt PICC
-  mfrc522.PICC_HaltA();
-  // Stop encryption on PCD
-  mfrc522.PCD_StopCrypto1();
 }
 
 // Your existing WiFi functions remain the same...
@@ -141,3 +113,7 @@ void makeHttpGetRequest() {
     Serial.println("WiFi not connected!");
   }
 }
+
+
+
+
