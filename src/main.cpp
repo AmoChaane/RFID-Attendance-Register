@@ -1,40 +1,59 @@
-#include <Arduino.h>
+#include <MFRC522v2.h>
+#include <MFRC522DriverSPI.h>
+//#include <MFRC522DriverI2C.h>
+#include <MFRC522DriverPinSimple.h>
+#include <MFRC522Debug.h>
 #include "WiFi.h"
 #include <HTTPClient.h>
-#include <SPI.h>
-#include <MFRC522.h>
-
-// Correct pin definitions matching your wiring
-#define SS_PIN  5  // ESP32 pin GPIO5 
-#define RST_PIN 27 // ESP32 pin GPIO27 
+#define LED_BUILTIN 2
 
 const char* ssid = "VC-1012-9086";
 const char* password = "41a4843464";
 const char* serverUrl = "https://spring-api.publicvm.com/api/v1/health/"; 
 
-MFRC522 rfid(SS_PIN, RST_PIN);
+// Learn more about using SPI/I2C or check the pin assigment for your board: https://github.com/OSSLibraries/Arduino_MFRC522v2#pin-layout
+MFRC522DriverPinSimple ss_pin(5);
+
+MFRC522DriverSPI driver{ss_pin}; // Create SPI driver
+//MFRC522DriverI2C driver{};     // Create I2C driver
+MFRC522 mfrc522{driver};         // Create MFRC522 instance
+
 MFRC522::MIFARE_Key key;
-byte nuidPICC[4];
+
+byte studentNumberBlockAddress = 1;
+byte studentNameBlockAddress = 2;
+// byte newBlockData[17] = {"Botshelo Bokaba "};
+//byte newBlockData[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};   // CLEAR DATA
+byte bufferblocksize = 18;
+byte studentNumberBlockDataRead[18];
+byte studentNameBlockDataRead[18];
+
+// #############Function Declarations##################
 
 bool connectToWiFi();
 void makeHttpGetRequest();
+void listenForTags();
+void readFromBlock(byte blockAddress, byte* blockDataRead, byte bufferBlockSize);
+void writeToBlock(byte blockAddress, byte* newBlockData);
+void blinkBuiltInLED();
+
+// ############################################
 
 void setup() {
-  Serial.begin(115200);
-  while (!Serial); // Wait for serial port to connect - needed for native USB
-  Serial.println("Serial Monitor Started!!!");
+  Serial.begin(115200);  // Initialize serial communication
+  while (!Serial);       // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4).
   
-  SPI.begin(); // init SPI bus
-  rfid.PCD_Init(); // init MFRC522
-
-  Serial.println("Tap an RFID/NFC tag on the RFID-RC522 reader");
+  pinMode(LED_BUILTIN, OUTPUT);
   
-  // Prepare key - all keys are set to FFFFFFFFFFFFh at chip delivery
+  mfrc522.PCD_Init();    // Init MFRC522 board.
+  // Serial.println(F("Warning: this example overwrites a block in your card, use with care!"));
+  Serial.println("Scan a card/tag...");
+ 
+  // Prepare key - all keys are set to FFFFFFFFFFFF at chip delivery from the factory.
   for (byte i = 0; i < 6; i++) {
     key.keyByte[i] = 0xFF;
   }
-
-  // WiFi connection (commented out for now to focus on RFID)
+  // WiFi connection
   // if (!connectToWiFi()) {
   //   Serial.println("Check credentials or hardware.");
   //   while (1);
@@ -42,27 +61,32 @@ void setup() {
 }
 
 void loop() {
-  if (rfid.PICC_IsNewCardPresent()) { // new tag is available
-    if (rfid.PICC_ReadCardSerial()) { // NUID has been readed
-      MFRC522::PICC_Type piccType = rfid.PICC_GetType(rfid.uid.sak);
-      Serial.print("RFID/NFC Tag Type: ");
-      Serial.println(rfid.PICC_GetTypeName(piccType));
-
-      // print UID in Serial Monitor in the hex format
-      Serial.print("UID:");
-      for (int i = 0; i < rfid.uid.size; i++) {
-        Serial.print(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
-        Serial.print(rfid.uid.uidByte[i], HEX);
-      }
-      Serial.println();
-
-      rfid.PICC_HaltA(); // halt PICC
-      rfid.PCD_StopCrypto1(); // stop encryption on PCD
-    }
-  }
+  listenForTags();
 }
 
-// Your existing WiFi functions remain the same...
+void listenForTags() {
+  // Check if a new card is present
+  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+    delay(500);
+    return;
+  }
+
+  // Display card UID
+  Serial.print("----------------\nCard UID: ");
+  // MFRC522Debug::PrintUID(Serial, (mfrc522.uid)); // use in arduino IDE
+  MFRC522Debug::PICC_DumpDetailsToSerial(mfrc522, Serial, &(mfrc522.uid)); // use in PlatformIO
+  Serial.println();
+
+  readFromBlock(studentNumberBlockAddress, studentNumberBlockDataRead, bufferblocksize);
+  readFromBlock(studentNameBlockAddress, studentNameBlockDataRead, bufferblocksize);
+  
+  // Halt communication with the card
+  mfrc522.PICC_HaltA();
+  mfrc522.PCD_StopCrypto1();
+
+  delay(2000);  // Delay for readability
+}
+
 bool connectToWiFi() {
   //Configures the ESP32 to operate in Station (STA) mode (i.e., as a client that connects to a router).
   // Disables unused modes (like Access Point mode) to save resources.
@@ -90,7 +114,6 @@ bool connectToWiFi() {
   return true;
 }
 
-
 void makeHttpGetRequest() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
@@ -109,11 +132,63 @@ void makeHttpGetRequest() {
       Serial.println(http.errorToString(httpCode).c_str());
     }
     http.end();  // Free resources
-  } else {
-    Serial.println("WiFi not connected!");
   }
 }
 
 
 
+void readFromBlock(byte blockAddress, byte* blockDataRead, byte bufferBlockSize = 18) {
+  //##############################
+  //In RFID communication with MIFARE Classic cards, authentication must be performed before reading or writing data blocks. There are two keys per sector on a MIFARE Classic card:
+  // 1. Key
+  // 2. Key B
+  // These keys control access to the data in that sector.
+  // 0x60 -> authenticate with Key A
+  // 0x61 -> authenticate with Key B
+  //#############################
+  // Authenticate the specified block using KEY_A = 0x60
+  if (mfrc522.PCD_Authenticate(0x60, blockAddress, &key, &(mfrc522.uid)) != 0) { 
+    Serial.println("Authentication failed.");
+    return;
+  }
 
+  // Read data from the specified block
+  if (mfrc522.MIFARE_Read(blockAddress, blockDataRead, &bufferBlockSize) != 0) {
+    Serial.println("Read failed.");
+  } else {
+    Serial.println("Read successfully!");
+    Serial.print("Data in block ");
+    Serial.print(blockAddress);
+    Serial.print(": ");
+    for (byte i = 0; i < 16; i++) {
+      Serial.print((char)blockDataRead[i]);  // Print as character
+    }
+    Serial.println();
+
+    blinkBuiltInLED();
+  }
+  
+}
+
+void writeToBlock(byte blockAddress, byte* newBlockData) {
+  // Authenticate the specified block using KEY_A = 0x60
+  if (mfrc522.PCD_Authenticate(0x60, blockAddress, &key, &(mfrc522.uid)) != 0) {
+    Serial.println("Authentication failed.");
+    return;
+  }
+  
+  // Write data to the specified block
+  if (mfrc522.MIFARE_Write(blockAddress, newBlockData, 16) != 0) {
+    Serial.println("Write failed.");
+  } else {
+    Serial.print("Data written successfully in block: ");
+    Serial.println(blockAddress);
+  }
+
+}
+
+void blinkBuiltInLED() {
+  digitalWrite(LED_BUILTIN, HIGH); // LED ON
+  delay(300);                     // Wait 1 second
+  digitalWrite(LED_BUILTIN, LOW);  // LED OFF
+}
