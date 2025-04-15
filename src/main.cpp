@@ -12,6 +12,7 @@
 #define LED_BUILTIN 2
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
+#define BUZZER_PIN 25
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -45,6 +46,7 @@ void listenForTags();
 void readFromBlock(byte blockAddress, byte* blockDataRead, byte bufferBlockSize);
 void writeToBlock(byte blockAddress, byte* newBlockData);
 void blinkBuiltInLED();
+void useBuzzer();
 void showTextOnDisplayReplace(String text, int textSize, bool clearDisplay);
 String turnByteToString(byte* byte);
 String shortenStringToFitScreen(String text);
@@ -56,6 +58,8 @@ void setup() {
   while (!Serial);       // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4).
   
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, HIGH);
   
   mfrc522.PCD_Init();    // Init MFRC522 board.
   // Serial.println(F("Warning: this example overwrites a block in your card, use with care!"));
@@ -105,6 +109,7 @@ void listenForTags() {
 
   String displayText = studentNumber + "\n" + studentName;
   showTextOnDisplayReplace(displayText, 2, true);
+  useBuzzer();
   
   // Halt communication with the card
   mfrc522.PICC_HaltA();
@@ -219,6 +224,13 @@ void blinkBuiltInLED() {
   digitalWrite(LED_BUILTIN, LOW);  // LED OFF
 }
 
+void useBuzzer() {
+  digitalWrite(BUZZER_PIN, LOW); // Buzzer on
+  delay(100);
+  digitalWrite(BUZZER_PIN, HIGH);  // Buzzer off
+  delay(100);
+}
+
 void showTextOnDisplayReplace(String text, int textSize, bool clearDisplay) {
   if(clearDisplay) {
     display.clearDisplay();
@@ -229,7 +241,6 @@ void showTextOnDisplayReplace(String text, int textSize, bool clearDisplay) {
   // Display static text
   display.println(text);
   display.display(); 
-  delay(1000);
 }
 
 String turnByteToString(byte* byte) {
