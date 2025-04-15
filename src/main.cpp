@@ -5,7 +5,16 @@
 #include <MFRC522Debug.h>
 #include "WiFi.h"
 #include <HTTPClient.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
 #define LED_BUILTIN 2
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 const char* ssid = "VC-1012-9086";
 const char* password = "41a4843464";
@@ -36,6 +45,9 @@ void listenForTags();
 void readFromBlock(byte blockAddress, byte* blockDataRead, byte bufferBlockSize);
 void writeToBlock(byte blockAddress, byte* newBlockData);
 void blinkBuiltInLED();
+void showTextOnDisplayReplace(String text, int textSize, bool clearDisplay);
+String turnByteToString(byte* byte);
+String shortenStringToFitScreen(String text);
 
 // ############################################
 
@@ -58,6 +70,14 @@ void setup() {
   //   Serial.println("Check credentials or hardware.");
   //   while (1);
   // }
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;);
+  }
+
+  delay(2000);
+  showTextOnDisplayReplace("Scan card/tag...", 2, true);
 }
 
 void loop() {
@@ -79,6 +99,12 @@ void listenForTags() {
 
   readFromBlock(studentNumberBlockAddress, studentNumberBlockDataRead, bufferblocksize);
   readFromBlock(studentNameBlockAddress, studentNameBlockDataRead, bufferblocksize);
+
+  String studentNumber = shortenStringToFitScreen(turnByteToString(studentNumberBlockDataRead));
+  String studentName = shortenStringToFitScreen(turnByteToString(studentNameBlockDataRead));
+
+  String displayText = studentNumber + "\n" + studentName;
+  showTextOnDisplayReplace(displayText, 2, true);
   
   // Halt communication with the card
   mfrc522.PICC_HaltA();
@@ -191,4 +217,33 @@ void blinkBuiltInLED() {
   digitalWrite(LED_BUILTIN, HIGH); // LED ON
   delay(300);                     // Wait 1 second
   digitalWrite(LED_BUILTIN, LOW);  // LED OFF
+}
+
+void showTextOnDisplayReplace(String text, int textSize, bool clearDisplay) {
+  if(clearDisplay) {
+    display.clearDisplay();
+  }
+  display.setTextSize(textSize);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 10);
+  // Display static text
+  display.println(text);
+  display.display(); 
+  delay(1000);
+}
+
+String turnByteToString(byte* byte) {
+  String text = "";
+  for (int i = 0; i < 16; i++) {
+    if (byte[i] == 0) break; // Stop at null terminator
+    text += (char)byte[i];
+  }
+  return text;
+}
+
+String shortenStringToFitScreen(String text) {
+  if (text.length() > 10) {
+    return text.substring(0, 10);
+  }
+  return text;
 }
