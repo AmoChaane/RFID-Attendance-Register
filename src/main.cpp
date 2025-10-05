@@ -17,9 +17,10 @@
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-const char* ssid = "VC-1012-9086";
-const char* password = "41a4843464";
-const char* serverUrl = "https://spring-api.publicvm.com/api/v1/health/"; 
+const char* ssid = "16 Burns Road Wifi";
+const char* password = "Jordaan1234567";
+// const char* serverUrl = "https://api.sagestudy.co.za/api/v1/health/"; 
+const char* serverUrl = "https://api.sagestudy.co.za/api/v1/attendance/addAttendance"; 
 
 // Learn more about using SPI/I2C or check the pin assigment for your board: https://github.com/OSSLibraries/Arduino_MFRC522v2#pin-layout
 MFRC522DriverPinSimple ss_pin(5);
@@ -32,7 +33,7 @@ MFRC522::MIFARE_Key key;
 
 byte studentNumberBlockAddress = 1;
 byte studentNameBlockAddress = 2;
-// byte newBlockData[17] = {"Botshelo Bokaba "};
+// byte newBlockData[17] = {"402308195       "};
 //byte newBlockData[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};   // CLEAR DATA
 byte bufferblocksize = 18;
 byte studentNumberBlockDataRead[18];
@@ -70,10 +71,10 @@ void setup() {
     key.keyByte[i] = 0xFF;
   }
   // WiFi connection
-  // if (!connectToWiFi()) {
-  //   Serial.println("Check credentials or hardware.");
-  //   while (1);
-  // }
+  if (!connectToWiFi()) {
+    Serial.println("Check credentials or hardware.");
+    while (1);
+  }
 
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
     Serial.println(F("SSD1306 allocation failed"));
@@ -110,6 +111,8 @@ void listenForTags() {
   String displayText = studentNumber + "\n" + studentName;
   showTextOnDisplayReplace(displayText, 2, true);
   useBuzzer();
+
+  makeHttpPostRequest(studentNumber);
   
   // Halt communication with the card
   mfrc522.PICC_HaltA();
@@ -165,6 +168,36 @@ void makeHttpGetRequest() {
     http.end();  // Free resources
   }
 }
+
+void makeHttpPostRequest(const String& userId) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    // Add userId as a query parameter
+    String urlWithParams = String(serverUrl) + "?studentNumber=" + userId;
+    http.begin(urlWithParams);
+
+    int httpCode = http.POST("");  // Send POST request with empty body
+
+    if (httpCode > 0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpCode);
+
+      String payload = http.getString();
+      Serial.print("Response: ");
+      Serial.println(payload);
+    } else {
+      Serial.print("POST request failed. Error: ");
+      Serial.println(http.errorToString(httpCode).c_str());
+    }
+
+    http.end();  // Free resources
+  } else {
+    Serial.println("WiFi not connected");
+  }
+}
+
+
 
 
 
